@@ -111,15 +111,36 @@ jobs:
       - name: Verify uv is reachable in a login shell
         run: bash -lc 'command -v uv && uv --version'
 
+      # Restore the configured emulator so shards skip the system-image download.
+      - name: Cache Android emulator
+        uses: actions/cache@v5
+        id: avd-cache
+        with:
+          path: |
+            ~/.android/avd/*
+            ~/.android/adb*
+          key: android-avd-api-31-x86_64-front-camera-v1
+
+      # A fresh cache needs one boot to create the snapshot that later jobs restore.
+      - name: Create Android emulator snapshot
+        if: steps.avd-cache.outputs.cache-hit != 'true'
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 31
+          arch: x86_64
+          force-avd-creation: false
+          emulator-options: -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-front emulated
+          disable-animations: false
+          script: echo "Generated Android emulator snapshot for caching."
+
       - name: Build, install, and run E2E tests
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 31
           arch: x86_64
-          # The runner's defaults plus an emulated front camera: the default
-          # AVD has only a back camera, and the camera flow takes its picture
-          # and video on the front one (see tests/e2e/flows/capabilities/camera.yaml).
-          emulator-options: -no-window -gpu swiftshader_indirect -no-snapshot -noaudio -no-boot-anim -camera-front emulated
+          force-avd-creation: false
+          # Keep the front camera in sync with the snapshot generated above.
+          emulator-options: -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-front emulated
           script: bash -lc "uv run ./scripts/run-e2e.sh android ${{ matrix.suites }}"
 
       # Maestro writes per-flow debug output (command log, view-hierarchy
